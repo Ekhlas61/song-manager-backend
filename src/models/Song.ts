@@ -11,10 +11,42 @@ export interface ISong extends Document {
 
 const songSchema = new Schema<ISong>(
   {
-    title: { type: String, required: true, trim: true },
-    artist: { type: String, required: true, trim: true },
-    album: { type: String, required: true, trim: true },
-    genre: { type: String, required: true, trim: true },
+    title: {
+      type: String,
+      required: [true, 'title is required'],
+      trim: true,
+      validate: {
+        validator: (value: string) => value.trim().length > 0,
+        message: 'title cannot be empty',
+      },
+    },
+    artist: {
+      type: String,
+      required: [true, 'artist is required'],
+      trim: true,
+      validate: {
+        validator: (value: string) => value.trim().length > 0,
+        message: 'artist cannot be empty',
+      },
+    },
+    album: {
+      type: String,
+      required: [true, 'album is required'],
+      trim: true,
+      validate: {
+        validator: (value: string) => value.trim().length > 0,
+        message: 'album cannot be empty',
+      },
+    },
+    genre: {
+      type: String,
+      required: [true, 'genre is required'],
+      trim: true,
+      validate: {
+        validator: (value: string) => value.trim().length > 0,
+        message: 'genre cannot be empty',
+      },
+    },
   },
   { timestamps: true }
 );

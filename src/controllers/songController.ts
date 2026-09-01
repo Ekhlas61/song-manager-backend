@@ -1,13 +1,42 @@
 import { Request, Response, NextFunction } from 'express';
-import Song from '../models/Song';
+import mongoose from 'mongoose';
+import Song, { ISong } from '../models/Song';
+
+type SongFilter = Partial<Record<'title' | 'artist' | 'album' | 'genre', RegExp>> & {
+  $or?: Array<Record<string, RegExp>>;
+};
+
+const toTrimmedString = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return value.length > 0 && typeof value[0] === 'string' ? value[0].trim() : '';
+  }
+
+  return typeof value === 'string' ? value.trim() : '';
+};
+
+const ensureValidSongId = (req: Request, res: Response): boolean => {
+  const songId = typeof req.params.id === 'string' ? req.params.id : '';
+
+  if (!mongoose.Types.ObjectId.isValid(songId)) {
+    res.status(400).json({ message: 'Invalid song ID' });
+    return false;
+  }
+
+  return true;
+};
 
 // CREATE
 export const createSong = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { title, artist, album, genre } = req.body;
+    const title = toTrimmedString(req.body.title);
+    const artist = toTrimmedString(req.body.artist);
+    const album = toTrimmedString(req.body.album);
+    const genre = toTrimmedString(req.body.genre);
+
     if (!title || !artist || !album || !genre) {
       return res.status(400).json({ message: 'All fields are required' });
     }
+
     const song = await Song.create({ title, artist, album, genre });
     res.status(201).json(song);
   } catch (error) {
@@ -18,17 +47,20 @@ export const createSong = async (req: Request, res: Response, next: NextFunction
 // READ ALL (with optional filter)
 export const getSongs = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { genre, artist, album, search } = req.query;
-    const filter: any = {};
+    const genre = toTrimmedString(req.query.genre);
+    const artist = toTrimmedString(req.query.artist);
+    const album = toTrimmedString(req.query.album);
+    const search = toTrimmedString(req.query.search);
+    const filter: SongFilter = {};
 
-    if (genre) filter.genre = { $regex: genre as string, $options: 'i' };
-    if (artist) filter.artist = { $regex: artist as string, $options: 'i' };
-    if (album) filter.album = { $regex: album as string, $options: 'i' };
+    if (genre) filter.genre = new RegExp(genre, 'i');
+    if (artist) filter.artist = new RegExp(artist, 'i');
+    if (album) filter.album = new RegExp(album, 'i');
     if (search) {
       filter.$or = [
-        { title: { $regex: search as string, $options: 'i' } },
-        { artist: { $regex: search as string, $options: 'i' } },
-        { album: { $regex: search as string, $options: 'i' } },
+        { title: new RegExp(search, 'i') },
+        { artist: new RegExp(search, 'i') },
+        { album: new RegExp(search, 'i') },
       ];
     }
 
@@ -42,6 +74,8 @@ export const getSongs = async (req: Request, res: Response, next: NextFunction) 
 // READ ONE
 export const getSongById = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    if (!ensureValidSongId(req, res)) return;
+
     const song = await Song.findById(req.params.id);
     if (!song) return res.status(404).json({ message: 'Song not found' });
     res.json(song);
@@ -53,6 +87,8 @@ export const getSongById = async (req: Request, res: Response, next: NextFunctio
 // UPDATE
 export const updateSong = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    if (!ensureValidSongId(req, res)) return;
+
     const song = await Song.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,
@@ -67,6 +103,8 @@ export const updateSong = async (req: Request, res: Response, next: NextFunction
 // DELETE
 export const deleteSong = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    if (!ensureValidSongId(req, res)) return;
+
     const song = await Song.findByIdAndDelete(req.params.id);
     if (!song) return res.status(404).json({ message: 'Song not found' });
     res.json({ message: 'Song deleted successfully' });
@@ -79,17 +117,15 @@ export const deleteSong = async (req: Request, res: Response, next: NextFunction
 export const getStatistics = async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const totalSongs = await Song.countDocuments();
-    const totalArtists = await Song.distinct('artist').then(a => a.length);
-    const totalAlbums = await Song.distinct('album').then(a => a.length);
-    const totalGenres = await Song.distinct('genre').then(g => g.length);
+    const totalArtists = await Song.distinct('artist').then((a) => a.length);
+    const totalAlbums = await Song.distinct('album').then((a) => a.length);
+    const totalGenres = await Song.distinct('genre').then((g) => g.length);
 
-    // Songs per genre
     const songsPerGenre = await Song.aggregate([
       { $group: { _id: '$genre', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]);
 
-    // Songs & albums per artist
     const artistStats = await Song.aggregate([
       {
         $group: {
@@ -109,7 +145,6 @@ export const getStatistics = async (_req: Request, res: Response, next: NextFunc
       { $sort: { songCount: -1 } },
     ]);
 
-    // Songs per album
     const songsPerAlbum = await Song.aggregate([
       { $group: { _id: { album: '$album', artist: '$artist' }, count: { $sum: 1 } } },
       { $sort: { count: -1 } },
